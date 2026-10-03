@@ -120,97 +120,276 @@
     "Success isn't final, failure isn't fatal: it is the courage to continue that counts. Keep pushing your boundaries for the upcoming exams!"
   </footer>
 
-  <script>
-    // Paste your Published Google Sheet CSV URL below:
-    const sheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRIOWFjp4w5DW5BhRNyyIgev10IGmklEccg4tgRYAI-qQob3iY92U3FW4Q6p5lebqdexGsvDEHvN0Jp/pub?output=csv';
+<!-- Load Chart.js for rendering the ECDF plot -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    let currentSortColumn = 4;
-    let currentSortAsc = false;
-    let studentsData = [];
+<script>
+  // Paste your Published Google Sheet CSV URL below:
+  const defaultSheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRIOWFjp4w5DW5BhRNyyIgev10IGmklEccg4tgRYAI-qQob3iY92U3FW4Q6p5lebqdexGsvDEHvN0Jp/pub?output=csv';
 
-    async function fetchResults() {
-      try {
-        const response = await fetch(sheetCsvUrl);
-        const data = await response.text();
-        parseCSV(data);
-      } catch (error) {
-        console.error('Error fetching sheet data:', error);
-      }
-    }
+  let currentSortColumn = 4;
+  let currentSortAsc = false;
+  let studentsData = [];
+  let ecdfChartInstance = null;
 
-    function parseCSV(csvText) {
-      const lines = csvText.trim().split('\n');
-      studentsData = [];
-
-      // Skip header row (i = 1)
-      for (let i = 1; i < lines.length; i++) {
-        const row = lines[i].split(',').map(item => item.trim().replace(/^"(.*)"$/, '$1'));
-        if (row.length >= 4) {
-          const name = row[0];
-          const eng = parseFloat(row[1]) || 0;
-          const maths = parseFloat(row[2]) || 0;
-          const eco = parseFloat(row[3]) || 0;
-
-          // Percentage calculated assuming each subject is out of 100
-          const total = eng + maths + eco;
-          const percentage = ((total / 300) * 100).toFixed(2);
-
-          studentsData.push({
-            name, eng, maths, eco, percentage: parseFloat(percentage)
-          });
-        }
-      }
-
-      // Default sort by Percentage Descending
-      studentsData.sort((a, b) => b.percentage - a.percentage);
-      renderTable();
-    }
-
-    function renderTable() {
-      const tbody = document.getElementById('tableBody');
-      tbody.innerHTML = '';
-
-      studentsData.forEach(student => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td style="text-align: left;">${student.name}</td>
-          <td>${student.eng}</td>
-          <td>${student.maths}</td>
-          <td>${student.eco}</td>
-          <td class="percentage-column">${student.percentage}%</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    function sortTable(columnIndex, type) {
-      if (currentSortColumn === columnIndex) {
-        currentSortAsc = !currentSortAsc;
+  async function fetchResults() {
+    let csvText = '';
+    
+    // 1. Try direct fetch
+    try {
+      const response = await fetch(defaultSheetCsvUrl);
+      if (response.ok) {
+        csvText = await response.text();
       } else {
-        currentSortColumn = columnIndex;
-        currentSortAsc = type === 'string' ? true : false;
+        throw new Error('Direct fetch failed with status ' + response.status);
       }
-
-      const keys = ['name', 'eng', 'maths', 'eco', 'percentage'];
-      const key = keys[columnIndex];
-
-      studentsData.sort((a, b) => {
-        let valA = a[key];
-        let valB = b[key];
-
-        if (type === 'string') {
-          return currentSortAsc 
-            ? valA.localeCompare(valB) 
-            : valB.localeCompare(valA);
+    } catch (err) {
+      console.warn('Direct fetch failed (CORS/Network issue), trying proxy fallback...', err);
+      // 2. Fallback to proxy to bypass CORS when opened locally via file://
+      try {
+        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(defaultSheetCsvUrl);
+        const proxyResponse = await fetch(proxyUrl);
+        if (proxyResponse.ok) {
+          csvText = await proxyResponse.text();
         } else {
-          return currentSortAsc ? valA - valB : valB - valA;
+          throw new Error('Proxy fetch failed');
         }
-      });
-
-      renderTable();
+      } catch (proxyErr) {
+        console.error('Error fetching sheet data via proxy:', proxyErr);
+        alert('Failed to load Google Sheet data. Check console or URL.');
+        return;
+      }
     }
 
-    window.onload = fetchResults;
-  </script>
+    if (csvText) {
+      parseCSV(csvText);
+    }
+  }
+
+  function parseCSV(csvText) {
+    const lines = csvText.trim().split('\n');
+    studentsData = [];
+
+    // Skip header row (i = 1)
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i].split(',').map(item => item.trim().replace(/^"(.*)"$/, '$1'));
+      if (row.length >= 4) {
+        const name = row[0];
+        const eng = parseFloat(row[1]) || 0;
+        const maths = parseFloat(row[2]) || 0;
+        const eco = parseFloat(row[3]) || 0;
+
+        // Percentage calculated assuming each subject is out of 100
+        const total = eng + maths + eco;
+        const percentage = ((total / 300) * 100).toFixed(2);
+
+        studentsData.push({
+          name, eng, maths, eco, percentage: parseFloat(percentage)
+        });
+      }
+    }
+
+    // Default sort by Percentage Descending
+    studentsData.sort((a, b) => b.percentage - a.percentage);
+    renderTable();
+    renderECDFChart();
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('tableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    studentsData.forEach(student => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td style="text-align: left;">${student.name}</td>
+        <td>${student.eng}</td>
+        <td>${student.maths}</td>
+        <td>${student.eco}</td>
+        <td class="percentage-column">${student.percentage}%</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function sortTable(columnIndex, type) {
+    if (currentSortColumn === columnIndex) {
+      currentSortAsc = !currentSortAsc;
+    } else {
+      currentSortColumn = columnIndex;
+      currentSortAsc = type === 'string' ? true : false;
+    }
+
+    const keys = ['name', 'eng', 'maths', 'eco', 'percentage'];
+    const key = keys[columnIndex];
+
+    studentsData.sort((a, b) => {
+      let valA = a[key];
+      let valB = b[key];
+
+      if (type === 'string') {
+        return currentSortAsc 
+          ? valA.localeCompare(valB) 
+          : valB.localeCompare(valA);
+      } else {
+        return currentSortAsc ? valA - valB : valB - valA;
+      }
+    });
+
+    renderTable();
+  }
+
+  // Helper to compute ECDF step coordinates for an array of subject scores
+  function computeECDF(scores) {
+    if (!scores || scores.length === 0) return [];
+    
+    const sorted = [...scores].sort((a, b) => a - b);
+    const n = sorted.length;
+    const ecdfData = [];
+
+    // Initial step start at zero cumulative probability
+    ecdfData.push({ x: 0, y: 0 });
+
+    for (let i = 0; i < n; i++) {
+      const score = sorted[i];
+      const cumProb = (i + 1) / n;
+      ecdfData.push({ x: score, y: cumProb });
+    }
+
+    return ecdfData;
+  }
+
+  function renderECDFChart() {
+    if (studentsData.length === 0) return;
+
+    // Create chart container canvas dynamically if it doesn't exist
+    let canvas = document.getElementById('ecdfChart');
+    if (!canvas) {
+      const chartWrapper = document.createElement('div');
+      chartWrapper.style.marginTop = '40px';
+      chartWrapper.style.padding = '20px';
+      chartWrapper.style.backgroundColor = 'var(--card-bg, #fffdf9)';
+      chartWrapper.style.borderRadius = '12px';
+      chartWrapper.style.border = '1px solid var(--border, #e3dac9)';
+      
+      const chartTitle = document.createElement('h2');
+      chartTitle.innerText = 'Subject Mark Distributions (ECDF Plot)';
+      chartTitle.style.textAlign = 'center';
+      chartTitle.style.color = 'var(--primary, #8c7a6b)';
+      chartTitle.style.fontSize = '1.3rem';
+      chartTitle.style.marginBottom = '15px';
+      
+      canvas = document.createElement('canvas');
+      canvas.id = 'ecdfChart';
+      
+      chartWrapper.appendChild(chartTitle);
+      chartWrapper.appendChild(canvas);
+
+      const container = document.querySelector('.container') || document.body;
+      container.appendChild(chartWrapper);
+    }
+
+    const engScores = studentsData.map(s => s.eng);
+    const mathsScores = studentsData.map(s => s.maths);
+    const ecoScores = studentsData.map(s => s.eco);
+
+    const engECDF = computeECDF(engScores);
+    const mathsECDF = computeECDF(mathsScores);
+    const ecoECDF = computeECDF(ecoScores);
+
+    if (ecdfChartInstance) {
+      ecdfChartInstance.destroy();
+    }
+
+    const ctx = canvas.getContext('2d');
+    ecdfChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'English',
+            data: engECDF,
+            borderColor: '#3d6a54', // Muted Sage Green
+            backgroundColor: 'rgba(61, 106, 84, 0.1)',
+            stepped: 'before',
+            borderWidth: 2.5,
+            pointRadius: 3
+          },
+          {
+            label: 'Maths',
+            data: mathsECDF,
+            borderColor: '#b85b35', // Terracotta
+            backgroundColor: 'rgba(184, 91, 53, 0.1)',
+            stepped: 'before',
+            borderWidth: 2.5,
+            pointRadius: 3
+          },
+          {
+            label: 'Eco',
+            data: ecoECDF,
+            borderColor: '#3b5a9a', // Deep Slate Blue
+            backgroundColor: 'rgba(59, 90, 154, 0.1)',
+            stepped: 'before',
+            borderWidth: 2.5,
+            pointRadius: 3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: {
+          mode: 'nearest',
+          intersect: false
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            min: 0,
+            max: 100,
+            title: {
+              display: true,
+              text: 'Marks Obtained (out of 100)',
+              color: '#3a322c',
+              font: { weight: 'bold' }
+            },
+            grid: { color: '#e3dac9' }
+          },
+          y: {
+            min: 0,
+            max: 1.0,
+            title: {
+              display: true,
+              text: 'Empirical CDF (Cumulative Proportion)',
+              color: '#3a322c',
+              font: { weight: 'bold' }
+            },
+            ticks: {
+              callback: (val) => (val * 100).toFixed(0) + '%'
+            },
+            grid: { color: '#e3dac9' }
+          }
+        },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { color: '#3a322c', font: { size: 13 } }
+          },
+          tooltip: {
+            callbacks: {
+              label: (context) => {
+                const score = context.parsed.x;
+                const prob = (context.parsed.y * 100).toFixed(1);
+                return `${context.dataset.label}: ${prob}% of students scored ≤ ${score} marks`;
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  window.onload = fetchResults;
+</script>
 </body>
 </html>
