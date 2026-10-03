@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MID TERMS RESULTS 2026</title>
+  <style>
+    :root {
+      --bg-color: #f7f4ef;
+      --card-bg: #fffdf9;
+      --primary: #8c7a6b;
+      --text-dark: #3a322c;
+      --border: #e3dac9;
+      --hover: #efe9df;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-dark);
+      margin: 0;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+      background-color: var(--card-bg);
+      border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.04);
+      padding: 30px;
+      border: 1px solid var(--border);
+    }
+
+    h1 {
+      text-align: center;
+      color: var(--primary);
+      letter-spacing: 2px;
+      margin-bottom: 25px;
+      font-size: 2rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th, td {
+      padding: 14px 16px;
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background-color: var(--hover);
+      color: var(--text-dark);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 600;
+      transition: background-color 0.2s ease;
+    }
+
+    th:hover {
+      background-color: #e5dccf;
+    }
+
+    th::after {
+      content: ' \25B2\25BC';
+      font-size: 0.6rem;
+      opacity: 0.4;
+    }
+
+    tr:hover {
+      background-color: #faf6f0;
+    }
+
+    .percentage-column {
+      font-weight: bold;
+      color: #6b5b4e;
+    }
+
+    footer {
+      margin-top: 40px;
+      text-align: center;
+      padding: 20px;
+      font-style: italic;
+      color: #7a6a5c;
+      border-top: 1px dashed var(--border);
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>MID TERMS RESULTS 2026</h1>
+
+    <table id="resultsTable">
+      <thead>
+        <tr>
+          <th onclick="sortTable(0, 'string')">Name</th>
+          <th onclick="sortTable(1, 'number')">English</th>
+          <th onclick="sortTable(2, 'number')">Maths</th>
+          <th onclick="sortTable(3, 'number')">Eco</th>
+          <th onclick="sortTable(4, 'number')">Percentage</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- Rows dynamically injected here -->
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    "Success isn't final, failure isn't fatal: it is the courage to continue that counts. Keep pushing your boundaries for the upcoming exams!"
+  </footer>
+
+  <script>
+    // Paste your Published Google Sheet CSV URL below:
+    const sheetCsvUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRIOWFjp4w5DW5BhRNyyIgev10IGmklEccg4tgRYAI-qQob3iY92U3FW4Q6p5lebqdexGsvDEHvN0Jp/pub?output=csv';
+
+    let currentSortColumn = 4;
+    let currentSortAsc = false;
+    let studentsData = [];
+
+    async function fetchResults() {
+      try {
+        const response = await fetch(sheetCsvUrl);
+        const data = await response.text();
+        parseCSV(data);
+      } catch (error) {
+        console.error('Error fetching sheet data:', error);
+      }
+    }
+
+    function parseCSV(csvText) {
+      const lines = csvText.trim().split('\n');
+      studentsData = [];
+
+      // Skip header row (i = 1)
+      for (let i = 1; i < lines.length; i++) {
+        const row = lines[i].split(',').map(item => item.trim().replace(/^"(.*)"$/, '$1'));
+        if (row.length >= 4) {
+          const name = row[0];
+          const eng = parseFloat(row[1]) || 0;
+          const maths = parseFloat(row[2]) || 0;
+          const eco = parseFloat(row[3]) || 0;
+
+          // Percentage calculated assuming each subject is out of 100
+          const total = eng + maths + eco;
+          const percentage = ((total / 300) * 100).toFixed(2);
+
+          studentsData.push({
+            name, eng, maths, eco, percentage: parseFloat(percentage)
+          });
+        }
+      }
+
+      // Default sort by Percentage Descending
+      studentsData.sort((a, b) => b.percentage - a.percentage);
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      studentsData.forEach(student => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="text-align: left;">${student.name}</td>
+          <td>${student.eng}</td>
+          <td>${student.maths}</td>
+          <td>${student.eco}</td>
+          <td class="percentage-column">${student.percentage}%</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function sortTable(columnIndex, type) {
+      if (currentSortColumn === columnIndex) {
+        currentSortAsc = !currentSortAsc;
+      } else {
+        currentSortColumn = columnIndex;
+        currentSortAsc = type === 'string' ? true : false;
+      }
+
+      const keys = ['name', 'eng', 'maths', 'eco', 'percentage'];
+      const key = keys[columnIndex];
+
+      studentsData.sort((a, b) => {
+        let valA = a[key];
+        let valB = b[key];
+
+        if (type === 'string') {
+          return currentSortAsc 
+            ? valA.localeCompare(valB) 
+            : valB.localeCompare(valA);
+        } else {
+          return currentSortAsc ? valA - valB : valB - valA;
+        }
+      });
+
+      renderTable();
+    }
+
+    window.onload = fetchResults;
+  </script>
+</body>
+</html>
